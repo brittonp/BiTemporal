@@ -1,6 +1,6 @@
 # Project Title: BiTemporal
 
-A Python app to visually display an example bi-temporal data set.
+A Python app to represent an example bi-temporal data set in a chart.
 
 ## Motivation
 
