@@ -11,7 +11,7 @@ from enum import Enum
 
 APP_TITLE = "Bi-Temporal Example - Department"
 CONNECTION_STRING = (
-    "mssql+pyodbc://PAUL-LAPTOP/DeptEmpBiTemporalManual"
+    "mssql+pyodbc://PAUL-LAPTOP/dept_emp_bitemporal_manual"
     "?driver=ODBC+Driver+17+for+SQL+Server"
     "&trusted_connection=yes"
 )
@@ -19,49 +19,49 @@ CONNECTION_STRING = (
 class SqlCommands(Enum):
     FETCH = """
         SELECT
-	        d.DeptHistID, 
-	        d.DeptID, 
-	        d.DeptName, 
-	        d.Location, 
-	        d.ValidFrom, 
+            d.dept_hist_id,
+            d.dept_id,
+            d.dept_name,
+            d.location,
+            d.valid_from,
+            CASE
+                WHEN d.valid_to = dbo.fn_infinity() THEN NULL
+                ELSE d.valid_to
+            END AS valid_to,
+            d.tran_from,
+            CASE
+                WHEN d.tran_to = dbo.fn_infinity() THEN NULL
+                ELSE d.tran_to
+            END AS tran_to,
 	        CASE
-		        WHEN d.ValidTo = dbo.fnInfinity() THEN NULL
-		        ELSE d.ValidTo
-	        END ValidTo,
-	        d.TranFrom, 
-	        CASE
-		        WHEN d.TranTo = dbo.fnInfinity() THEN NULL
-		        ELSE d.TranTo
-	        END TranTo,
-	        CASE
-		        WHEN d.TranTo = dbo.fnInfinity() THEN 'Current'
+		        WHEN d.tran_to = dbo.fn_infinity() THEN 'Current'
 		        ELSE 'Historical'
-	        END RecordStatus
+	        END record_status
         FROM 
-	        dbo.Department d
-        WHERE
-	        DeptID = 10
+	        dbo.department d
+        WHERE 
+	        d.dept_id = 10
         ORDER BY 
-	        DeptHistID
+	        d.dept_hist_id
         """
-    RESET = "EXEC dbo.Reset_Data"
+    RESET = "EXEC dbo.reset_data"
     UPDATE1 = """
         UPDATE	
-            dbo.Department
+            dbo.department
         SET
-	        DeptName = 'New Sales',
-	        ValidFrom = '2025-10-01'
+	        dept_name = 'New Sales',
+	        valid_from = '2025-10-01'
         WHERE 
-	        DeptID = 10
+	        dept_id = 10
     """
     UPDATE2 = """
         UPDATE	
             dbo.Department
         SET
-	        DeptName = 'Original Sales',
-	        ValidFrom = '2020-06-01'
+	        dept_name = 'Original Sales',
+	        valid_from = '2020-06-01'
         WHERE 
-	        DeptID = 10
+	        dept_id = 10
     """
 
 class DataEngine:
@@ -230,12 +230,12 @@ def display_chart(ax, df):
     ]
 
     for idx, row in df.iterrows():
-        valid_to = row['ValidTo'] if pd.notnull(row['ValidTo']) else pd.Timestamp.today() + pd.Timedelta(weeks=52)
-        tran_to  = row['TranTo']  if pd.notnull(row['TranTo']) else pd.Timestamp.today() + pd.Timedelta(weeks=52)
+        valid_to = row['valid_to'] if pd.notnull(row['valid_to']) else pd.Timestamp.today() + pd.Timedelta(weeks=52)
+        tran_to  = row['tran_to']  if pd.notnull(row['tran_to']) else pd.Timestamp.today() + pd.Timedelta(weeks=52)
 
-        x_start = mdates.date2num(row['ValidFrom'])
+        x_start = mdates.date2num(row['valid_from'])
         x_end   = mdates.date2num(valid_to)
-        y_start = mdates.date2num(row['TranFrom'])
+        y_start = mdates.date2num(row['tran_from'])
         y_end   = mdates.date2num(tran_to)
 
         width  = x_end - x_start
@@ -243,9 +243,9 @@ def display_chart(ax, df):
         color = color_palette[idx % len(color_palette)]
 
         rect = Rectangle((x_start, y_start), width, height, facecolor=color, edgecolor=color, alpha=0.4)
-        rect.histid = row['DeptHistID']
+        rect.histid = row['dept_hist_id']
         ax.add_patch(rect)
-        ax.text(x_start, y_start, f"{row['DeptHistID']}-{row['DeptName']}", verticalalignment='bottom', fontsize=8)
+        ax.text(x_start, y_start, f"{row['dept_hist_id']}-{row['dept_name']}", verticalalignment='bottom', fontsize=8)
 
     ax.set_xlabel("Valid Date (As Of)")
     ax.set_ylabel("Transaction Date (Recorded)")
@@ -258,9 +258,9 @@ def display_chart(ax, df):
     ax.tick_params(axis='x', labelsize=8)
     ax.tick_params(axis='y', labelsize=8)
 
-    ax.set_xlim(mdates.date2num(df['ValidFrom'].min() - pd.Timedelta(weeks=52)),
+    ax.set_xlim(mdates.date2num(df['valid_from'].min() - pd.Timedelta(weeks=52)),
                 mdates.date2num(pd.Timestamp.today() + pd.Timedelta(weeks=52)))
-    ax.set_ylim(mdates.date2num(df['TranFrom'].min() - pd.Timedelta(weeks=52)),
+    ax.set_ylim(mdates.date2num(df['tran_from'].min() - pd.Timedelta(weeks=52)),
                 mdates.date2num(pd.Timestamp.today() + pd.Timedelta(weeks=52)))
 
     # Horizontal line for today
@@ -268,7 +268,7 @@ def display_chart(ax, df):
     y_value = now
     ax.axhline(y=y_value, color="red", linestyle="--", linewidth=1)
     ax.text(
-        x=mdates.date2num(df['ValidFrom'].min() - pd.Timedelta(weeks=52)), 
+        x=mdates.date2num(df['valid_from'].min() - pd.Timedelta(weeks=52)), 
         y=y_value, 
         s="Today",
         va="center", ha="right", color="red"
@@ -278,7 +278,7 @@ def display_chart(ax, df):
     ax.axvline(x=x_value, color="red", linestyle="--", linewidth=1)
     ax.text(
         x=x_value,
-        y=mdates.date2num(df['TranFrom'].min() - pd.Timedelta(weeks=52)),
+        y=mdates.date2num(df['tran_from'].min() - pd.Timedelta(weeks=52)),
         s="Today",
         va="top", ha="center", color="red"
     )
@@ -333,7 +333,7 @@ paned.add(frame_table, stretch="always")
 frame_table.rowconfigure(0, weight=1)
 frame_table.columnconfigure(0, weight=1)
 
-columns = ["DeptHistID","DeptID","DeptName","Location","ValidFrom","ValidTo","TranFrom","TranTo","RecordStatus"]
+columns = ["dept_hist_id","dept_id","dept_name","Location","valid_from","valid_to","tran_from","tran_to","record_status"]
 tree = TableTreeview(frame_table, columns=columns, show="headings")
 
 # --- Bottom button frame ---

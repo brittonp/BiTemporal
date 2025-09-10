@@ -1,270 +1,306 @@
-﻿USE DeptEmpBiTemporalManual;
+USE dept_emp_bitemporal_manual;
 GO
 
-CREATE OR ALTER FUNCTION dbo.fnInfinity()
+-- ============================================================
+-- Utility function
+-- ============================================================
+CREATE OR ALTER FUNCTION dbo.fn_infinity()
 RETURNS DATETIME2(7)
 AS
 BEGIN
-	RETURN '9999-12-31 23:59:59.9999999';
-END
+    RETURN '9999-12-31 23:59:59.9999999';
+END;
 GO
 
+-- ============================================================
 -- Cleanup
-IF OBJECT_ID('dbo.Employee', 'U') IS NOT NULL 
-	DROP TABLE dbo.Employee;
-IF OBJECT_ID('dbo.Department', 'U') IS NOT NULL 
-	DROP TABLE dbo.Department;
-IF OBJECT_ID('dbo.Department_Current', 'V') IS NOT NULL 
-	DROP VIEW dbo.Department_Current;
+-- ============================================================
+IF OBJECT_ID('dbo.employee', 'U') IS NOT NULL 
+    DROP TABLE dbo.employee;
+IF OBJECT_ID('dbo.department', 'U') IS NOT NULL 
+    DROP TABLE dbo.department;
+IF OBJECT_ID('dbo.department_master', 'U') IS NOT NULL 
+    DROP TABLE dbo.department_master;
+IF OBJECT_ID('dbo.vw_department_current', 'V') IS NOT NULL 
+    DROP VIEW dbo.vw_department_current;
 GO
 
-CREATE TABLE dbo.Department (
-    DeptHistID  BIGINT IDENTITY PRIMARY KEY,   -- surrogate per version
-    DeptID      INT NOT NULL,                  -- business key
-    DeptName    NVARCHAR(200) NOT NULL,
-    Location    NVARCHAR(200),
-    ValidFrom   DATETIME2(7) NOT NULL,
-    ValidTo     DATETIME2(7) NOT NULL,
-    TranFrom    DATETIME2(7) NOT NULL,
-    TranTo      DATETIME2(7) NOT NULL,
-    CONSTRAINT UQ_Department_Version UNIQUE (DeptID, ValidFrom, TranFrom)
+-- ============================================================
+-- Department Master Table
+-- ============================================================
+CREATE TABLE dbo.department_master (
+    dept_id INT PRIMARY KEY,
+    created_ts DATETIME2(7) NOT NULL DEFAULT SYSUTCDATETIME()
 );
 GO
 
-CREATE VIEW dbo.Department_Current
-AS
-SELECT
-	d.*
-FROM
-	dbo.Department d
-WHERE 
-	SYSUTCDATETIME() >= d.ValidFrom 
-AND 
-	SYSUTCDATETIME() < d.ValidTo
-AND 
-	SYSUTCDATETIME() >= d.TranFrom 
-AND 
-	SYSUTCDATETIME() < d.TranTo
+-- ============================================================
+-- Department History Table
+-- ============================================================
+CREATE TABLE dbo.department (
+    dept_hist_id BIGINT IDENTITY PRIMARY KEY,
+    dept_id      INT NOT NULL,
+    dept_name    NVARCHAR(200) NOT NULL,
+    location     NVARCHAR(200),
+    valid_from   DATETIME2(7) NOT NULL,
+    valid_to     DATETIME2(7) NOT NULL,
+    tran_from    DATETIME2(7) NOT NULL,
+    tran_to      DATETIME2(7) NOT NULL,
+    CONSTRAINT uq_department_version UNIQUE (dept_id, valid_from, tran_from),
+    CONSTRAINT fk_department_master FOREIGN KEY (dept_id) REFERENCES dbo.department_master(dept_id)
+);
 GO
 
-CREATE OR ALTER TRIGGER dbo.tr_Department_Update
-ON dbo.Department
+-- ============================================================
+-- Employee History Table
+-- ============================================================
+CREATE TABLE dbo.employee (
+    emp_hist_id  BIGINT IDENTITY PRIMARY KEY,
+    emp_id       INT NOT NULL,
+    dept_id      INT NOT NULL,
+    first_name   NVARCHAR(100) NOT NULL,
+    last_name    NVARCHAR(100) NOT NULL,
+    job_title    NVARCHAR(200),
+    hire_date    DATE NOT NULL,
+    term_date    DATE NULL,
+    valid_from   DATETIME2(7) NOT NULL,
+    valid_to     DATETIME2(7) NOT NULL,
+    tran_from    DATETIME2(7) NOT NULL,
+    tran_to      DATETIME2(7) NOT NULL,
+    CONSTRAINT uq_employee_version UNIQUE (emp_id, valid_from, tran_from),
+    CONSTRAINT fk_employee_department FOREIGN KEY (dept_id) REFERENCES dbo.department_master(dept_id)
+);
+GO
+
+-- ============================================================
+-- Current Department View
+-- ============================================================
+CREATE VIEW dbo.vw_department_current
+AS
+SELECT d.*
+FROM dbo.department d
+WHERE SYSUTCDATETIME() >= d.valid_from 
+  AND SYSUTCDATETIME() < d.valid_to
+  AND SYSUTCDATETIME() >= d.tran_from 
+  AND SYSUTCDATETIME() < d.tran_to;
+GO
+
+-- ============================================================
+-- Department Update Trigger
+-- ============================================================
+CREATE OR ALTER TRIGGER 
+	dbo.tr_department_update
+ON 
+	dbo.department
 INSTEAD OF UPDATE
 AS
 BEGIN
     SET NOCOUNT ON;
 
-    -- Check if forbidden columns are being updated
-    IF (UPDATE(TranFrom) OR UPDATE(TranTo) OR UPDATE(ValidTo))
+    IF (UPDATE(tran_from) OR UPDATE(tran_to) OR UPDATE(valid_to))
     BEGIN
-        THROW 50001, 'Updates to TranFrom, TranTo, or ValidTo are not allowed.', 1;
+        THROW 50001, 'Updates to tran_from, tran_to, or valid_to are not allowed.', 1;
         ROLLBACK TRANSACTION;
         RETURN;
     END;
 
-	-- Check mandatory columns are being updated
-    IF NOT UPDATE(ValidFrom)
+    IF NOT UPDATE(valid_from)
     BEGIN
-        THROW 50002, 'A ValidFrom date is required.', 1;
+        THROW 50002, 'A valid_from date is required.', 1;
         ROLLBACK TRANSACTION;
         RETURN;
     END;
 
-    DECLARE @Now DATETIME2(7) = SYSUTCDATETIME();
+    DECLARE @now DATETIME2(7) = SYSUTCDATETIME();
 
-    -- Insert a new old record with the known ValidTo date (from the new ValidFrom)...
-    -- This is the backfill record to cover the valid period from the old records valid_from to the new records valid_from.
-	-- So do not create a record if d.ValidFrom = i.ValidFrom
-    INSERT INTO dbo.Department 
+    -- Backfill record
+    INSERT INTO 
+		dbo.department 
 	(
-		DeptID, 
-		DeptName, 
-		Location, 
-		ValidFrom, 
-		ValidTo, 
-		TranFrom, 
-		TranTo
-	)
-	SELECT
-		d.DeptID,
-		d.DeptName,
-		d.Location,
-		d.ValidFrom,
-		i.ValidFrom,
-		@Now,
-		dbo.fnInfinity()
-	FROM 
-		deleted d 
-	JOIN 
+        dept_id, 
+		dept_name, 
+		location,
+        valid_from, 
+		valid_to, 
+		tran_from, 
+		tran_to
+    )
+    SELECT
+        d.dept_id,
+        d.dept_name,
+        d.location,
+        d.valid_from,
+        i.valid_from,
+        @now,
+        dbo.fn_infinity()
+    FROM 
+		deleted d
+    JOIN 
 		inserted i 
 	ON 
-		d.DeptHistID = i.DeptHistID
-	WHERE    
-		i.ValidFrom >= d.ValidFrom AND i.ValidFrom < d.ValidTo
-	AND
-		d.TranTo = dbo.fnInfinity()
-	AND
-			d.ValidFrom != i.ValidFrom;
+		d.dept_hist_id = i.dept_hist_id
+    WHERE 
+		i.valid_from >= d.valid_from 
+	AND 
+		i.valid_from < d.valid_to
+    AND 
+		d.tran_to = dbo.fn_infinity()
+    AND 
+		d.valid_from != i.valid_from;
 
-    -- Close transaction time on old record
-	UPDATE dbo.Department
-	SET 
-		TranTo = @Now
-	FROM 
-		dbo.Department dpt
-	JOIN 
+    -- Close old version
+    UPDATE 
+		dbo.Department
+    SET 
+		tran_to = @now
+    FROM 
+		dbo.department dpt
+    JOIN 
 		deleted d 
 	ON 
-		dpt.DeptHistID = d.DeptHistID
-	JOIN 
+		dpt.dept_hist_id = d.dept_hist_id
+    JOIN 
 		inserted i 
 	ON 
-		d.DeptHistID = i.DeptHistID
-	WHERE 
-		i.ValidFrom >= d.ValidFrom AND i.ValidFrom < d.ValidTo
-	AND
-		d.TranTo = dbo.fnInfinity();
+		d.dept_hist_id = i.dept_hist_id
+    WHERE 
+		i.valid_from >= d.valid_from 
+	AND 
+		i.valid_from < d.valid_to
+    AND 
+		d.tran_to = dbo.fn_infinity();
 
     -- Insert new version
-	INSERT INTO dbo.Department 
+    INSERT INTO 
+		dbo.department 
 	(
-		DeptID, 
-		DeptName, 
-		Location, 
-		ValidFrom, 
-		ValidTo, 
-		TranFrom, 
-		TranTo
-	)
-	SELECT
-		i.DeptID,
-		i.DeptName,
-		i.Location,
-		i.ValidFrom,
-		i.ValidTo,
-		@Now,
-		dbo.fnInfinity()
-	FROM
- 		deleted d 
-	JOIN 
-		inserted i
+        dept_id, 
+		dept_name, 
+		location,
+        valid_from, 
+		valid_to, 
+		tran_from, 
+		tran_to
+    )
+    SELECT
+        i.dept_id,
+        i.dept_name,
+        i.location,
+        i.valid_from,
+        i.valid_to,
+        @now,
+        dbo.fn_infinity()
+    FROM 
+		deleted d
+    JOIN 
+		inserted i 
 	ON 
-		d.DeptHistID = i.DeptHistID
-	WHERE 
-		i.ValidFrom >= d.ValidFrom AND i.ValidFrom < d.ValidTo
-	AND
-		i.TranTo = dbo.fnInfinity();
-
-END
+		d.dept_hist_id = i.dept_hist_id
+    WHERE 
+		i.valid_from >= d.valid_from 
+	AND 
+		i.valid_from < d.valid_to
+    AND 
+		i.tran_to = dbo.fn_infinity();
+END;
 GO
 
-CREATE OR ALTER PROCEDURE dbo.Get_Department 
-	@DeptID      INT,
-	@TranDate    DATETIME2(7) = NULL,
-	@ValidDate   DATETIME2(7) = NULL
+-- ============================================================
+-- Department Getter Procedure
+-- ============================================================
+CREATE OR ALTER PROCEDURE 
+	dbo.get_department
+    @dept_id    INT,
+    @tran_date  DATETIME2(7) = NULL,
+    @valid_date DATETIME2(7) = NULL
 AS
+BEGIN
+    SET @valid_date = ISNULL(@valid_date, SYSUTCDATETIME());
+    SET @tran_date = ISNULL(@tran_date, SYSUTCDATETIME());
 
-	SET @ValidDate = ISNULL(@ValidDate, SYSUTCDATETIME());
-	SET @TranDate = ISNULL(@TranDate, SYSUTCDATETIME());
-
-	SELECT 
-		@TranDate AS TranDate,
-		@ValidDate AS ValidDate,
-		d.*
-	FROM 
-		dbo.Department d
-	WHERE
-		DeptID = 10
+    SELECT 
+        @tran_date AS tran_date,
+        @valid_date AS valid_date,
+        d.*
+    FROM 
+		dbo.department d
+    WHERE 
+		d.dept_id = @dept_id
+    AND 
+		@valid_date >= d.valid_from 
 	AND 
-		@ValidDate >= d.ValidFrom AND @ValidDate < d.ValidTo
+		@valid_date < d.valid_to
+    AND 
+		@tran_date >= d.tran_from 
 	AND 
-		@TranDate >= d.TranFrom AND @TranDate < d.TranTo
-
-RETURN;
+		@tran_date < d.tran_to;
+END;
 GO
 
-
--- Seed some data
-CREATE OR ALTER PROCEDURE dbo.Reset_Data
+-- ============================================================
+-- Reset Data Procedure
+-- ============================================================
+CREATE OR ALTER PROCEDURE 
+	dbo.reset_data
 AS 
 BEGIN
     SET NOCOUNT ON;
 
-	DELETE FROM
-		dbo.Department;
+    DELETE FROM dbo.employee;
+    DELETE FROM dbo.department;
+    DELETE FROM dbo.department_master;
 
-    -- Reset the identity so the next row inserted will start at 1
-    DBCC CHECKIDENT ('dbo.Department', RESEED, 0);
+    DBCC CHECKIDENT ('dbo.department', RESEED, 0);
+    DBCC CHECKIDENT ('dbo.employee', RESEED, 0);
 
+    -- Seed department master
+    INSERT INTO 
+		dbo.department_master (dept_id)
+    VALUES 
+		(10),
+		(20);
 
-	-- Initial recording on 1999-12-01 (DB thinks it is valid forever)
-	INSERT INTO dbo.Department
-	(
-		DeptID, 
-		DeptName, 
-		Location, 
-		ValidFrom, 
-		ValidTo, 
-		TranFrom, 
-		TranTo
+    -- Seed department history
+    INSERT INTO 
+		dbo.department
+    (
+		dept_id, 
+		dept_name, 
+		location, 
+		valid_from, 
+		valid_to, 
+		tran_from, 
+		tran_to
 	)
-	VALUES
-	(
-		10, 
-		'Sales', 
-		NULL,
-		'2020-01-01', 
-		dbo.fnInfinity(),   -- unknown end date
-		'2019-12-01', 
-		'2020-12-01'  -- superseded in 2020
-	),
-	(
-		10, 
-		'Sales', 
-		NULL,
-		'2020-01-01', 
-		'2021-01-01',   -- now we know it ends here
-		'2020-12-01', 
-		dbo.fnInfinity()  -- current until another change
-		),
-	(
-		10, 
-		'Sales & Marketing', 
-		NULL,
-		'2021-01-01', 
-		dbo.fnInfinity(),   -- no known end yet
-		'2020-12-01', 
-		'2021-12-01'  -- superseded in 2021
-	),
-	(
-		10, 
-		'Sales & Marketing', 
-		NULL,
-		'2021-01-01', 
-		'2022-01-01',
-		'2021-12-01', 
-		dbo.fnInfinity()
-	),
-	(
-		10, 
-		'Sales & BizDev', 
-		NULL,
-		'2022-01-01', 
-		dbo.fnInfinity(),
-		'2021-12-01', 
-		dbo.fnInfinity()
-	),
-	(
-		20, 
-		'Finance',
-			NULL,
-		'2019-01-01', 
-		dbo.fnInfinity(),
-		'2019-01-01', 
-		dbo.fnInfinity()
-	);
+    VALUES
+		(10, 'Sales', NULL, '2020-01-01', dbo.fn_infinity(), '2019-12-01', '2020-12-01'),
+		(10, 'Sales', NULL, '2020-01-01', '2021-01-01', '2020-12-01', dbo.fn_infinity()),
+		(10, 'Sales & Marketing', NULL, '2021-01-01', dbo.fn_infinity(), '2020-12-01', '2021-12-01'),
+		(10, 'Sales & Marketing', NULL, '2021-01-01', '2022-01-01', '2021-12-01', dbo.fn_infinity()),
+		(10, 'Sales & BizDev', NULL, '2022-01-01', dbo.fn_infinity(), '2021-12-01', dbo.fn_infinity()),
+		(20, 'Finance', NULL, '2019-01-01', dbo.fn_infinity(), '2019-01-01', dbo.fn_infinity());
+
+    -- Seed employee history
+    INSERT INTO 
+		dbo.employee
+    (
+		emp_id, 
+		dept_id, 
+		first_name, 
+		last_name, 
+		job_title, 
+		hire_date, 
+		valid_from, 
+		valid_to, 
+		tran_from, 
+		tran_to
+	)
+    VALUES
+    (100, 10, 'Alice', 'Smith', 'Sales Rep', '2020-01-15', '2020-01-15', dbo.fn_infinity(), SYSUTCDATETIME(), dbo.fn_infinity()),
+    (101, 20, 'Bob', 'Jones', 'Accountant', '2019-03-01', '2019-03-01', dbo.fn_infinity(), SYSUTCDATETIME(), dbo.fn_infinity());
 END;
 GO
 
-EXEC dbo.Reset_Data
+-- Seed data
+EXEC dbo.reset_data;
 GO
