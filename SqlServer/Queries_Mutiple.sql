@@ -1,3 +1,6 @@
+USE dept_emp_bitemporal_manual
+GO
+
 DECLARE @valid_date DATETIME2(7) = SYSUTCDATETIME();
 DECLARE @tran_date DATETIME2(7) = SYSUTCDATETIME();
 

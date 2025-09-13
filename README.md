@@ -16,13 +16,16 @@ By plotting the data with the transaction date on the y-axis and the valid date 
 
 The example sources data from a local a SqlServer Database. I have provided a [Create.sql](./SqlServer/Create.sql) which:
 
-* Creates a table __department__ to store the bi-temporal data
+* Creates a table __department__ & __employee__ to store the bi-temporal data
 * Creates a view __vw_department_current__ to return valid Departments effective of the current system date
 * Creates a trigger __tr_department_update__ which manages the transaction process when an attribute of the Department is updated
 * Creates a procedure to __get_department__ which return Departments for a specific transaction and valid date
 * Creates and executes a procedure __reset_data__ which re-intialises the example's seed data
 
-A further file [Queries.sql](./SqlServer/Queries.sql) contains some example update statements, queries and example procedure calls, although the app itself provides all the necessary database interaction for this example.
+A further files:
+
+* [Queries.sql](./SqlServer/Queries.sql) contains some example update statements, queries and example procedure calls, although the app itself provides all the necessary database interaction for this example.
+* [Queries_Multiple.sql](./SqlServer/Queries_Multiple.sql) contains examples of querying of linked bi-temporal tables given a __transaction date__ and a __valid data__.
 
 ### Python App
 The Python app requires the the connection string to be modified to point to your database instance:
