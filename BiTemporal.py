@@ -19,6 +19,8 @@ CONNECTION_STRING = (
     "?driver=ODBC+Driver+17+for+SQL+Server"
     "&trusted_connection=yes"
 )
+DEPT_COLUMNS = ["dept_hist_id","dept_id","dept_name","location","valid_from","valid_to","tran_from","tran_to"]
+EMP_COLUMNS = ["emp_hist_id","emp_id","dept_id", "first_name","last_name","job_title","hire_date","term_date","valid_from","valid_to","tran_from","tran_to"]
 
 class SqlCommands(Enum):
     FETCH_DEPT = """
@@ -196,6 +198,39 @@ class TableTreeview(ttk.Treeview):
 
             self.item(item_id, tags=(tag,))
 
+class TableContainer:
+    def __init__(self, parent, title, columns):
+        self.parent = parent
+        self.title = title
+        self.columns = columns 
+        
+        frame = tk.Frame(parent)
+        frame.rowconfigure(0, weight=0) # title row
+        frame.columnconfigure(0, weight=1) # treeview row
+        frame.rowconfigure(1, weight=1)
+
+        # Title
+        label = ttk.Label(frame, text=title, anchor="w", font=("Arial", 12, "bold"))
+        label.grid(row=0, column=0, sticky="ew", pady=5, padx=5)
+
+        # Table
+        table_frame = tk.Frame(frame)
+        table_frame.rowconfigure(0, weight=1)
+        table_frame.columnconfigure(0, weight=1)
+
+        tree = TableTreeview(table_frame, columns, show="headings")
+        self.tree = tree
+
+        # Attach tree to table_frame
+        tree.grid(row=0, column=0, sticky="nsew")
+
+        # Attach table_frame to frame
+        table_frame.grid(row=1, column=0, sticky="nsew") 
+
+        # Attach to the frame to parent
+        frame.grid(row=0, column=0, sticky="nsew")
+
+
 class BtnToolTip:
     def __init__(self, widget, text):
         self.widget = widget
@@ -265,17 +300,22 @@ class Tooltip:
             self.label = None
 
 class Chart:
-    def __init__(self, parent, root, title, key, labels):
+    def __init__(self, parent, tooltip, title, key, labels):
         self.parent = parent
-        self.root = root
+        self.tooltip = tooltip
         self.title = title
         self.key = key 
         self.labels = labels
-        fig, ax_chart = plt.subplots(figsize=(12, 4))
-        self.ax_chart = ax_chart
+
+        fig, ax = plt.subplots(figsize=(12, 6)) 
+        fig.subplots_adjust(bottom=0.15, top=0.85)
+
+        self.ax = ax
         canvas = FigureCanvasTkAgg(fig, master=parent)
         self.canvas = canvas
         canvas.get_tk_widget().grid(row=0, column=0, sticky="nsew")
+        parent.grid_rowconfigure(0, weight=1)
+        parent.grid_columnconfigure(0, weight=1)
 
         toolbar = NavigationToolbar2Tk(canvas, parent, pack_toolbar=False)
         toolbar.update()
@@ -286,13 +326,13 @@ class Chart:
 
     # --- Display chart ---
     def display_chart(self, df):
-        ax_chart = self.ax_chart
+        ax = self.ax
         title = self.title
         key = self.key
         labels = self.labels
         canvas = self.canvas
 
-        ax_chart.clear()
+        ax.clear()
         color_palette = [
             "#1f77b4","#ff7f0e","#2ca02c","#d62728","#9467bd",
             "#8c564b","#e377c2","#7f7f7f","#bcbd22","#17becf"
@@ -313,30 +353,30 @@ class Chart:
 
             rect = Rectangle((x_start, y_start), width, height, facecolor=color, edgecolor=color, alpha=0.4)
             rect.histid = row[key]
-            ax_chart.add_patch(rect)
-            ax_chart.text(x_start, y_start, "-".join(str(row[i]) for i in labels), verticalalignment='bottom', fontsize=8)
+            ax.add_patch(rect)
+            ax.text(x_start, y_start, "-".join(str(row[i]) for i in labels), verticalalignment='bottom', fontsize=8)
 
-        ax_chart.set_xlabel("Valid Date (As Of)")
-        ax_chart.set_ylabel("Transaction Date (Recorded)")
-        ax_chart.set_title(title)
+        ax.set_xlabel("Valid Date (As Of)")
+        ax.set_ylabel("Transaction Date (Recorded)")
+        ax.set_title(title)
 
-        ax_chart.xaxis_date()
-        ax_chart.yaxis_date()
-        ax_chart.xaxis.set_major_formatter(mdates.DateFormatter("%Y-%m-%d"))
-        ax_chart.yaxis.set_major_formatter(mdates.DateFormatter("%Y-%m-%d"))
-        ax_chart.tick_params(axis='x', labelsize=8)
-        ax_chart.tick_params(axis='y', labelsize=8)
+        ax.xaxis_date()
+        ax.yaxis_date()
+        ax.xaxis.set_major_formatter(mdates.DateFormatter("%Y-%m-%d"))
+        ax.yaxis.set_major_formatter(mdates.DateFormatter("%Y-%m-%d"))
+        ax.tick_params(axis='x', labelsize=8)
+        ax.tick_params(axis='y', labelsize=8)
 
-        ax_chart.set_xlim(mdates.date2num(df['valid_from'].min() - pd.Timedelta(weeks=52)),
+        ax.set_xlim(mdates.date2num(df['valid_from'].min() - pd.Timedelta(weeks=52)),
                     mdates.date2num(pd.Timestamp.today() + pd.Timedelta(weeks=52)))
-        ax_chart.set_ylim(mdates.date2num(df['tran_from'].min() - pd.Timedelta(weeks=52)),
+        ax.set_ylim(mdates.date2num(df['tran_from'].min() - pd.Timedelta(weeks=52)),
                     mdates.date2num(pd.Timestamp.today() + pd.Timedelta(weeks=52)))
 
         # Horizontal line for today
         now = mdates.date2num(pd.Timestamp.now())
         y_value = now
-        ax_chart.axhline(y=y_value, color="red", linestyle="--", linewidth=1)
-        ax_chart.text(
+        ax.axhline(y=y_value, color="red", linestyle="--", linewidth=1)
+        ax.text(
             x=mdates.date2num(df['valid_from'].min() - pd.Timedelta(weeks=52)), 
             y=y_value, 
             s="Today",
@@ -344,31 +384,55 @@ class Chart:
         )
         # Vertical line for today
         x_value = now
-        ax_chart.axvline(x=x_value, color="red", linestyle="--", linewidth=1)
-        ax_chart.text(
+        ax.axvline(x=x_value, color="red", linestyle="--", linewidth=1)
+        ax.text(
             x=x_value,
             y=mdates.date2num(df['tran_from'].min() - pd.Timedelta(weeks=52)),
             s="Today",
             va="top", ha="center", color="red"
         )
 
+        # Create crosshair lines once
+        self.vline = ax.axvline(color="gray", lw=0.8, ls="--", alpha=0.6)
+        self.hline = ax.axhline(color="gray", lw=0.8, ls="--", alpha=0.6)
+
         canvas.draw()
 
     def on_motion(self, event):
         if event.inaxes and event.guiEvent:
             x, y = event.xdata, event.ydata
-            # Convert x from Matplotlib float to datetime
+
+            # Move crosshairs
+            self.vline.set_xdata([x, x])
+            self.hline.set_ydata([y, y])
+
+            # Redraw canvas efficiently
+            self.ax.figure.canvas.draw_idle()
+
+            # Convert values to datetime for tooltip
             valid_dt = mdates.num2date(x)
             trans_dt = mdates.num2date(y)
-            tooltip.showtip(f"Transaction: {trans_dt:%d-%b-%Y}\nValid: {valid_dt:%d-%b-%Y}",
-                            event.guiEvent.x_root,
-                            event.guiEvent.y_root)
-        
-            self.parent._last_payload = {"trans_dt": trans_dt.isoformat(), "valid_dt": valid_dt.isoformat(), "series": "DateDimension"}
+
+            self.tooltip.showtip(
+                f"Transaction: {trans_dt:%d-%b-%Y}\nValid: {valid_dt:%d-%b-%Y}",
+                event.guiEvent.x_root,
+                event.guiEvent.y_root,
+            )
+
+            # Propagate to parent
+            self.parent._last_payload = {
+                "trans_dt": trans_dt.isoformat(),
+                "valid_dt": valid_dt.isoformat(),
+                "series": "DateDimension",
+            }
             self.parent.event_generate("<<ChartMotion>>", when="tail")
 
         else:
-            tooltip.hidetip()
+            self.tooltip.hidetip()
+            # Move crosshairs outside of view instead of clearing them
+            self.vline.set_xdata([float("nan"), float("nan")])
+            self.hline.set_ydata([float("nan"), float("nan")])
+            self.ax.figure.canvas.draw_idle()
 
 # --- Plotting function ---
 def plot_data():
@@ -378,8 +442,8 @@ def plot_data():
     department_chart.display_chart(dfDept)
     employee_chart.display_chart(dfEmp)
 
-    tree_dept.display_table(dfDept)
-    tree_emp.display_table(dfEmp)
+    department_table.tree.display_table(dfDept)
+    employee_table.tree.display_table(dfEmp)
 
 def data_change(action):
     engine.sql_execute(action)
@@ -391,8 +455,8 @@ def handle_chart_motion(event):
     if dates:
         trans_dt = datetime.fromisoformat(dates['trans_dt'])
         valid_dt = datetime.fromisoformat(dates['valid_dt'])
-        tree_dept.select_row("dept_hist_id", trans_dt, valid_dt)
-        tree_emp.select_row("emp_hist_id", trans_dt, valid_dt)
+        department_table.tree.select_row("dept_hist_id", trans_dt, valid_dt)
+        employee_table.tree.select_row("emp_hist_id", trans_dt, valid_dt)
 
 # --- Main ---
 engine = DataEngine(CONNECTION_STRING)
@@ -403,6 +467,9 @@ root.title(APP_TITLE)
 root.geometry("1700x800")
 root.rowconfigure(0, weight=1)
 root.columnconfigure(0, weight=1)
+
+# Create tooltip object
+tooltip = Tooltip(root)
 
 # --- Main PanedWindow (verical splitter) ---
 paned = tk.PanedWindow(root, orient=tk.VERTICAL, sashrelief=tk.RAISED, sashwidth=8, bg="lightgray")
@@ -417,7 +484,7 @@ department_chart_frame = tk.Frame(chart_paned, width=100)
 department_chart_frame.rowconfigure(0, weight=1)  # canvas row
 department_chart_frame.rowconfigure(1, weight=0)  # toolbar row
 department_chart_frame.columnconfigure(0, weight=1)
-department_chart = Chart(department_chart_frame, root, 'Department', 'dept_hist_id', ['dept_hist_id', 'dept_name'])
+department_chart = Chart(department_chart_frame, tooltip, 'Department', 'dept_hist_id', ['dept_hist_id', 'dept_name'])
 chart_paned.add(department_chart_frame, stretch="always")
 
 # --- Employee Chart Frame ---
@@ -425,30 +492,22 @@ employee_chart_frame = tk.Frame(chart_paned, width=100)
 employee_chart_frame.rowconfigure(0, weight=1)  # canvas row
 employee_chart_frame.rowconfigure(1, weight=0)  # toolbar row
 employee_chart_frame.columnconfigure(0, weight=1)
-employee_chart = Chart(employee_chart_frame, root, 'Employee', 'emp_hist_id', ['emp_hist_id', 'last_name'])
+employee_chart = Chart(employee_chart_frame, tooltip, 'Employee', 'emp_hist_id', ['emp_hist_id', 'last_name'])
 chart_paned.add(employee_chart_frame, stretch="always")
 
 # --- Department Table Frame ---
 department_table_frame = tk.Frame(paned)
-paned.add(department_table_frame)
-department_table_frame.rowconfigure(0, weight=1)
+department_table_frame.rowconfigure(0, weight=0)
 department_table_frame.columnconfigure(0, weight=1)
-
-# Department table
-columns_dept = ["dept_hist_id","dept_id","dept_name","location","valid_from","valid_to","tran_from","tran_to"]
-tree_dept = TableTreeview(department_table_frame, columns=columns_dept, show="headings")
-tree_dept.grid(row=0, column=0, sticky="nsew")
+department_table = TableContainer(department_table_frame, "Department bi-temporal table", DEPT_COLUMNS)
+paned.add(department_table_frame)
 
 # --- Employee Table Frame ---
 employee_table_frame = tk.Frame(paned)
-paned.add(employee_table_frame)
-employee_table_frame.rowconfigure(0, weight=1)
+employee_table_frame.rowconfigure(0, weight=0)
 employee_table_frame.columnconfigure(0, weight=1)
-
-# Employee table
-columns_emp = ["emp_hist_id","emp_id","dept_id", "first_name","last_name","job_title","hire_date","term_date","valid_from","valid_to","tran_from","tran_to"]
-tree_emp = TableTreeview(employee_table_frame, columns=columns_emp, show="headings")
-tree_emp.grid(row=0, column=0, sticky="nsew")
+employee_table = TableContainer(employee_table_frame, "Employee bi-temporal table", EMP_COLUMNS)
+paned.add(employee_table_frame)
 
 # --- Button frame ---
 toolbar_frame = tk.Frame(root)
@@ -465,9 +524,6 @@ btnUpdate2.pack(side=tk.LEFT, padx=5, pady=5)
 BtnToolTip(btnUpdate2,SqlCommands.UPDATE2.value)
 
 tk.Button(toolbar_frame, text="Refresh", command=plot_data).pack(side=tk.RIGHT, padx=5, pady=5)
-
-# Create tooltip object
-tooltip = Tooltip(root)
 
 root.bind_all("<<ChartMotion>>", handle_chart_motion)
 
