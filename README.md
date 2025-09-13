@@ -8,7 +8,7 @@ The concept of bi-temporal data—managing and interpreting both the transaction d
 
 By plotting the data with the transaction date on the y-axis and the valid date on the x-axis, the chart provides a clear way to see how these two dimensions interact over time. The goal is not to build a production-ready tool, but rather to offer an approachable, visual illustration of bi-temporal concepts for learning, teaching, or discussion.
 
-![Example Bi-Temporal Chart](./Screenshot.png)
+![Example Bi-Temporal Chart](./Screenshot.png) 
 
 ## Setup
 
