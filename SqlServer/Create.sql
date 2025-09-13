@@ -296,11 +296,50 @@ BEGIN
 		tran_to
 	)
     VALUES
-    (100, 10, 'Alice', 'Smith', 'Sales Rep', '2020-01-15', '2020-01-15', dbo.fn_infinity(), SYSUTCDATETIME(), dbo.fn_infinity()),
-    (101, 20, 'Bob', 'Jones', 'Accountant', '2019-03-01', '2019-03-01', dbo.fn_infinity(), SYSUTCDATETIME(), dbo.fn_infinity());
+    (100, 10, 'Alice', 'Smith', 'Sales Rep', '2017-01-01', '2020-01-01', dbo.fn_infinity(), '2019-12-01', '2021-02-01'),
+    (100, 10, 'Alice', 'Smith', 'Sales Rep', '2017-01-01', '2020-01-01', '2021-01-01', '2021-02-01', dbo.fn_infinity()),
+    (100, 10, 'Alice', 'Smith-Jones', 'Sales Rep', '2017-01-01', '2021-01-01', dbo.fn_infinity(), '2021-02-01', dbo.fn_infinity()),
+    (101, 20, 'Bob', 'Jones', 'Accountant', '2018-01-01', '2019-03-01', dbo.fn_infinity(), '2019-12-01', dbo.fn_infinity());
 END;
 GO
 
 -- Seed data
 EXEC dbo.reset_data;
+GO
+
+-- Extended functionality 
+CREATE OR ALTER FUNCTION dbo.fn_as_of_employee
+(
+    @valid_date DATETIME2(7),
+    @tran_date  DATETIME2(7)
+)
+RETURNS TABLE
+AS
+RETURN
+(
+    SELECT *
+    FROM dbo.employee
+    WHERE @valid_date >= valid_from
+      AND @valid_date < valid_to
+      AND @tran_date >= tran_from
+      AND @tran_date < tran_to
+);
+GO
+
+CREATE OR ALTER FUNCTION dbo.fn_as_of_department
+(
+    @valid_date DATETIME2(7),
+    @tran_date  DATETIME2(7)
+)
+RETURNS TABLE
+AS
+RETURN
+(
+    SELECT *
+    FROM dbo.department
+    WHERE @valid_date >= valid_from
+      AND @valid_date < valid_to
+      AND @tran_date >= tran_from
+      AND @tran_date < tran_to
+);
 GO
