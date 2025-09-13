@@ -25,7 +25,7 @@ The example sources data from a local a SqlServer Database. I have provided a [C
 A further files:
 
 * [Queries.sql](./SqlServer/Queries.sql) contains some example update statements, queries and example procedure calls, although the app itself provides all the necessary database interaction for this example.
-* [Queries_Multiple.sql](./SqlServer/Queries_Multiple.sql) contains examples of querying of linked bi-temporal tables given a __transaction date__ and a __valid data__.
+* [Queries_Multiple.sql](./SqlServer/Queries_Multiple.sql) contains examples of querying of linked bi-temporal tables given a __transaction date__ and a __valid date__.
 
 ### Python App
 The Python app requires the the connection string to be modified to point to your database instance:
