@@ -24,10 +24,14 @@
     <Compile Include="BiTemporal.py" />
   </ItemGroup>
   <ItemGroup>
+    <Folder Include="PostgreSql\" />
     <Folder Include="SqlServer\" />
   </ItemGroup>
   <ItemGroup>
+    <Content Include=".env" />
     <Content Include="LICENSE" />
+    <Content Include="PostgreSql\Create.sql" />
+    <Content Include="PostgreSql\Queries.sql" />
     <Content Include="README.md" />
     <Content Include="Screenshot.png" />
     <Content Include="SqlServer\Create.sql" />

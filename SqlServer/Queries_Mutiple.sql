@@ -1,4 +1,4 @@
-USE dept_emp_bitemporal_manual
+USE dept_emp_bitemporal;
 GO
 
 DECLARE @valid_date DATETIME2(7) = SYSUTCDATETIME();

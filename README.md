@@ -14,36 +14,66 @@ By plotting the data with the transaction date on the y-axis and the valid date 
 
 ### Database
 
-The example sources data from a local a SqlServer Database. I have provided a [Create.sql](./SqlServer/Create.sql) which:
+The example supports both SqlServer and PostgreSql. 
 
-* Creates a table __department__ & __employee__ to store the bi-temporal data
-* Creates a view __vw_department_current__ to return valid Departments effective of the current system date
-* Creates a trigger __tr_department_update__ which manages the transaction process when an attribute of the Department is updated
-* Creates a procedure to __get_department__ which return Departments for a specific transaction and valid date
-* Creates and executes a procedure __reset_data__ which re-intialises the example's seed data
+#### SqlServer
 
-A further files:
+The [Create.sql](./SqlServer/Create.sql) creates:
+
+* A function __fn_infinity__, to return a DATETIME2 value of *'9999-12-31 23:59:59.9999999'*
+* Tables __department_master__, __department__ & __employee__ to store the bi-temporal data
+* A view __vw_department_current__ to return valid Departments effective of the current system date
+* A trigger __tr_department_instead_of_update__ which manages the transaction process when an attribute of the Department is updated
+* A procedure to __get_department__ which return Departments for a specific transaction and valid date
+* A procedure __reset_data__ which is then executed to initialises the example's seed 
+* Functions __fn_as_of_department__ and __fn_as_of_employee__ to return data as of specified *tran_date* and *valid_date*, used in queries contained in [Queries_Multiple.sql](./SqlServer/Queries_Multiple.sql)
+
+The file can be re-executed to re-create the database objects.
+
+Further files:
 
 * [Queries.sql](./SqlServer/Queries.sql) contains some example update statements, queries and example procedure calls, although the app itself provides all the necessary database interaction for this example.
-* [Queries_Multiple.sql](./SqlServer/Queries_Multiple.sql) contains examples of querying of linked bi-temporal tables given a __transaction date__ and a __valid date__.
+* [Queries_Multiple.sql](./SqlServer/Queries_Multiple.sql) contains examples of querying of linked bi-temporal tables given a *tran_date* and *valid_date*.
+
+#### PostgreSql
+
+The [Create.sql](./PostgreSql/Create.sql) creates:
+
+* A Schema __dbo__ (to avoid changing Sql with Python code)
+* A function __fn_infinity__, to return a TIMESTAMP WITH TIME ZONE value of *'9999-12-31 23:59:59.999999'*
+* Tables __department_master__, __department__ & __employee__ to store the bi-temporal data* Creates a view __vw_department_current__ to return valid Departments effective of the current system date
+* A trigger __tr_department_update__ (and corresponding function) which manages the transaction process when an attribute of the Department is updated
+* A procedure __reset_data__ which is then executed to initialises the example's seed 
+
+The file can be re-executed to re-create the database objects.
+
+* [Queries.sql](./PostgreSql/Queries.sql) contains some example update statements, queries and example procedure calls, although the app itself provides all the necessary database interaction for this example.
 
 ### Python App
-The Python app requires the the connection string to be modified to point to your database instance:
 
-```python
-CONNECTION_STRING = (
-    "mssql+pyodbc://[your-server]/[your-database]"
-    "?driver=ODBC+Driver+17+for+SQL+Server"
-    "&trusted_connection=yes"
-)
+The python code expects *.env* file to be located in the same folder as the *BiTemporal.py* file and contain the necessary connection values: 
+
+```Text
+# SqlServer connection values
+DB_DRIVER=ODBC+Driver+17+for+SQL+Server
+
+# PostgreSql connection values
+DB_USER=your_user
+DB_PASSWORD=your_password
+DB_PORT=your_port
+
+# common connection values
+DB_NAME=dept_emp_bitemporal
+DB_HOST=localhost
 ```
 
 ## How to use the app
-On first running the app you will see the chart reflecting the initial seed data for Department 10 (the seed data).
+
+On first running the app you will see the charts and tables reflecting the initial seed Department and Employee data for Department 10.
 
 There are two buttons with predefined __UPDATE__ statements to modify Department 10's title from a specific effective date. On performing the updates the affect will be shown in the chart and the table (which is the contents of the __department__ database table for Department 10).
 
-To re-intialise the data click __Reset__.
+To re-initialise the data click __Reset__.
 
 ## License
 

@@ -12,17 +12,30 @@ from enum import Enum
 import json
 from datetime import datetime
 from sqlalchemy.orm import keyfunc_mapping
+import os
+from dotenv import load_dotenv
 
 APP_TITLE = "Bi-Temporal Example"
-CONNECTION_STRING = (
-    "mssql+pyodbc://PAUL-LAPTOP/dept_emp_bitemporal_manual"
-    "?driver=ODBC+Driver+17+for+SQL+Server"
-    "&trusted_connection=yes"
-)
+
+load_dotenv()  # loads .env into environment
+user = os.getenv("DB_USER")
+password = os.getenv("DB_PASSWORD")
+host = os.getenv("DB_HOST")
+port = os.getenv("DB_PORT")
+db = os.getenv("DB_NAME")
+driver=os.getenv("DB_DRIVER")
+
+# SqlServer connection
+# CONNECTION_STRING = f"mssql+pyodbc://{host}/{db}?driver={driver}&trusted_connection=yes"
+# PostgreSql connection
+CONNECTION_STRING = f"postgresql+psycopg://{user}:{password}@{host}:{port}/{db}"
+
 DEPT_COLUMNS = ["dept_hist_id","dept_id","dept_name","location","valid_from","valid_to","tran_from","tran_to"]
 EMP_COLUMNS = ["emp_hist_id","emp_id","dept_id", "first_name","last_name","job_title","hire_date","term_date","valid_from","valid_to","tran_from","tran_to"]
 
-class SqlCommands(Enum):
+class SqlCommands(Enum):    
+    # RESET = "EXEC dbo.reset_data" # SqlServer syntax
+    RESET = "CALL dbo.reset_data()" # PostgreSql syntax
     FETCH_DEPT = """
         SELECT
             d.dept_hist_id,
@@ -81,7 +94,6 @@ class SqlCommands(Enum):
         ORDER BY 
 	        e.emp_hist_id
         """
-    RESET = "EXEC dbo.reset_data"
     UPDATE1 = """
         UPDATE	
             dbo.department
