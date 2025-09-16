@@ -4,8 +4,8 @@ GO
 DECLARE @valid_date DATETIME2(7) = SYSUTCDATETIME();
 DECLARE @tran_date DATETIME2(7) = SYSUTCDATETIME();
 
---SET @tran_date = '2021-01-15';
---SET @valid_date = '2021-01-15';
+SET @tran_date = '2021-01-15';
+SET @valid_date = '2021-01-15';
 
 -- ============================================================
 -- Pre-filter bi-temporal tables using CTEs

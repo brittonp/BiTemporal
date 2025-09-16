@@ -243,3 +243,59 @@ BEFORE UPDATE ON dbo.department
 FOR EACH ROW
 EXECUTE FUNCTION dbo.tr_department_update();
 
+-- Extended functionality 
+-- ============================================================
+-- As-of Employee Function in PostgreSQL
+-- ============================================================
+CREATE OR REPLACE FUNCTION dbo.fn_as_of_employee(
+    valid_date TIMESTAMP,
+    tran_date  TIMESTAMP
+)
+RETURNS TABLE (
+    emp_hist_id BIGINT,
+    emp_id      INT,
+    dept_id     INT,
+    first_name  VARCHAR(100),
+    last_name   VARCHAR(100),
+    job_title   VARCHAR(200),
+    hire_date   DATE,
+    term_date   DATE,
+    valid_from  TIMESTAMP,
+    valid_to    TIMESTAMP,
+    tran_from   TIMESTAMP,
+    tran_to     TIMESTAMP
+) AS $$
+    SELECT e.*
+    FROM dbo.employee e
+    WHERE valid_date >= e.valid_from
+      AND valid_date <  e.valid_to
+      AND tran_date  >= e.tran_from
+      AND tran_date  <  e.tran_to;
+$$ LANGUAGE sql STABLE;
+
+-- ============================================================
+-- As-of Department Function in PostgreSQL
+-- ============================================================
+CREATE OR REPLACE FUNCTION dbo.fn_as_of_department(
+    valid_date TIMESTAMP,
+    tran_date  TIMESTAMP
+)
+RETURNS TABLE (
+    dept_hist_id BIGINT,
+    dept_id      INT,
+    dept_name    VARCHAR(200),
+    location     VARCHAR(200),
+    valid_from   TIMESTAMP,
+    valid_to     TIMESTAMP,
+    tran_from    TIMESTAMP,
+    tran_to      TIMESTAMP
+) AS $$
+    SELECT d.*
+    FROM dbo.department d
+    WHERE valid_date >= d.valid_from
+      AND valid_date <  d.valid_to
+      AND tran_date  >= d.tran_from
+      AND tran_date  <  d.tran_to;
+$$ LANGUAGE sql STABLE;
+
+

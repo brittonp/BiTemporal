@@ -1,6 +1,8 @@
 ﻿from turtle import title
 import pyodbc
 import pandas as pd
+import matplotlib
+matplotlib.use("TkAgg")  # ensure TkAgg backend for Tkinter embedding
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 from matplotlib.patches import Rectangle
