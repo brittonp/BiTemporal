@@ -54,6 +54,10 @@ The file can be re-executed to re-create the database objects.
 The python code expects *.env* file to be located in the same folder as the *BiTemporal.py* file and contain the necessary connection values: 
 
 ```Text
+# Database - select one
+DB_PRODUCT=SqlServer  # Default
+#DB_PRODUCT=PostgreSql
+
 # SqlServer connection values
 DB_DRIVER=ODBC+Driver+17+for+SQL+Server
 
@@ -77,4 +81,4 @@ To re-initialise the data click __Reset__.
 
 ## License
 
-This project is licensed under the MIT License – see the [LICENSE](./LICENSE) file for details.
+This project is licensed under the MIT License – see the [LICENCE](./LICENCE) file for details.

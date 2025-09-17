@@ -51,7 +51,7 @@ GO
 
 UPDATE dbo.department
 SET
-    dept_name = 'Original Sales',
+    dept_name = 'Temp',
     valid_from = '2021-01-01'
 WHERE 
     dept_id = 10;

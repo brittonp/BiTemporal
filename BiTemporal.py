@@ -8,7 +8,7 @@ import matplotlib.dates as mdates
 from matplotlib.patches import Rectangle
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
 import tkinter as tk
-from tkinter import ttk
+from tkinter import ttk, messagebox
 from sqlalchemy import create_engine, text
 from enum import Enum
 import json
@@ -16,28 +16,33 @@ from datetime import datetime
 from sqlalchemy.orm import keyfunc_mapping
 import os
 from dotenv import load_dotenv
+from PIL import Image, ImageTk
 
 APP_TITLE = "Bi-Temporal Example"
 
+class DbProduct(Enum): 
+    SQLSERVER = "SqlServer"
+    POSTGRESQL = "PostgreSql"
+
 load_dotenv()  # loads .env into environment
+DB_PRODUCT=os.getenv("DB_PRODUCT")
 user = os.getenv("DB_USER")
 password = os.getenv("DB_PASSWORD")
 host = os.getenv("DB_HOST")
 port = os.getenv("DB_PORT")
-db = os.getenv("DB_NAME")
+db_name = os.getenv("DB_NAME")
 driver=os.getenv("DB_DRIVER")
 
-# SqlServer connection
-# CONNECTION_STRING = f"mssql+pyodbc://{host}/{db}?driver={driver}&trusted_connection=yes"
-# PostgreSql connection
-CONNECTION_STRING = f"postgresql+psycopg://{user}:{password}@{host}:{port}/{db}"
+if DB_PRODUCT == DbProduct.POSTGRESQL.value:
+    CONNECTION_STRING = f"postgresql+psycopg://{user}:{password}@{host}:{port}/{db_name}"
+else: # Defaults to 'SqlServer'
+    CONNECTION_STRING = f"mssql+pyodbc://{host}/{db_name}?driver={driver}&trusted_connection=yes"
 
 DEPT_COLUMNS = ["dept_hist_id","dept_id","dept_name","location","valid_from","valid_to","tran_from","tran_to"]
 EMP_COLUMNS = ["emp_hist_id","emp_id","dept_id", "first_name","last_name","job_title","hire_date","term_date","valid_from","valid_to","tran_from","tran_to"]
 
 class SqlCommands(Enum):    
-    # RESET = "EXEC dbo.reset_data" # SqlServer syntax
-    RESET = "CALL dbo.reset_data()" # PostgreSql syntax
+    RESET = "CALL dbo.reset_data()" if DB_PRODUCT == DbProduct.POSTGRESQL.value else "EXEC dbo.reset_data"
     FETCH_DEPT = """
         SELECT
             d.dept_hist_id,
@@ -114,6 +119,15 @@ class SqlCommands(Enum):
         WHERE 
 	        dept_id = 10
     """
+    UPDATE3 = """
+        UPDATE	
+            dbo.Employee
+        SET
+	        job_title = 'Lead Sales Rep',
+	        valid_from = '2025-10-01'
+        WHERE 
+	        emp_id = 100
+    """
 
 class DataEngine:
     def __init__(self, connection_string):
@@ -155,6 +169,7 @@ class TableTreeview(ttk.Treeview):
     def display_table(self, df):
 
         self.df = df
+        self.row_map = {}
 
         # Clear existing rows
         for row in self.get_children():
@@ -173,7 +188,8 @@ class TableTreeview(ttk.Treeview):
                     if pd.isna(values[j]):
                         values[j] = "-"  # custom replacement text
 
-            self.insert("", tk.END, values=values, tags=(banding_tag,))
+            iid = self.insert("", tk.END, values=values, tags=(banding_tag,))
+            self.row_map[i] = iid
 
         # keep a copy for next comparison
         #self.df = df.copy()
@@ -207,6 +223,7 @@ class TableTreeview(ttk.Treeview):
 
             if int(row_values[0]) in matching_ids:
                 tag = "selected_even" if is_even else "selected_odd"
+                self.see(self.row_map[i])
             else:
                 tag = "evenrow" if is_even else "oddrow"
 
@@ -244,6 +261,9 @@ class TableContainer:
         # Attach to the frame to parent
         frame.grid(row=0, column=0, sticky="nsew")
 
+import tkinter as tk
+
+import tkinter as tk
 
 class BtnToolTip:
     def __init__(self, widget, text):
@@ -257,12 +277,12 @@ class BtnToolTip:
     def show_tip(self, event=None):
         if self.tip_window or not self.text:
             return
-        x = self.widget.winfo_rootx() + 20
-        y = self.widget.winfo_rooty() + self.widget.winfo_height() + 5
-        self.tip_window = tw = tk.Toplevel(self.widget)
-        tw.wm_overrideredirect(True)   # no window decorations
-        tw.wm_geometry(f"+{x}+{y}")
 
+        # Create tooltip window first
+        self.tip_window = tw = tk.Toplevel(self.widget)
+        tw.wm_overrideredirect(True)  # no window decorations
+
+        # Tooltip label
         label = tk.Label(
             tw,
             text=self.text,
@@ -272,13 +292,47 @@ class BtnToolTip:
             borderwidth=1,
             font=("tahoma", 8, "normal")
         )
-        label.pack(ipadx=1)
+        label.pack(ipadx=1, ipady=1)
+
+        # Update geometry to get label size
+        tw.update_idletasks()
+        tip_width = tw.winfo_width()
+        tip_height = tw.winfo_height()
+
+        # Parent window geometry
+        parent = self.widget.winfo_toplevel()
+        px = parent.winfo_rootx()
+        py = parent.winfo_rooty()
+        pwidth = parent.winfo_width()
+        pheight = parent.winfo_height()
+
+        # Default position: below the widget
+        x = self.widget.winfo_rootx() + 20
+        y = self.widget.winfo_rooty() + self.widget.winfo_height() + 5
+
+        # Clamp within parent window horizontally
+        if x + tip_width > px + pwidth:
+            x = px + pwidth - tip_width - 5  # shift left
+
+        if x < px:
+            x = px + 5  # shift right
+
+        # Clamp within parent window vertically
+        if y + tip_height > py + pheight:
+            # Show above the widget if below would overflow
+            y = self.widget.winfo_rooty() - tip_height - 5
+
+        if y < py:
+            y = py + 5  # prevent going above parent
+
+        tw.wm_geometry(f"+{x}+{y}")
 
     def hide_tip(self, event=None):
         tw = self.tip_window
         self.tip_window = None
         if tw:
             tw.destroy()
+
 
 class Tooltip:
     def __init__(self, widget):
@@ -368,9 +422,9 @@ class Chart:
             rect = Rectangle((x_start, y_start), width, height, facecolor=color, edgecolor=color, alpha=0.4)
             rect.histid = row[key]
             ax.add_patch(rect)
-            ax.text(x_start, y_start, "-".join(str(row[i]) for i in labels), verticalalignment='bottom', fontsize=8)
+            ax.text(x_start, y_start, "\n".join(str(row[i]) for i in labels), verticalalignment='bottom', fontsize=8)
 
-        ax.set_xlabel("Valid Date (As Of)")
+        ax.set_xlabel("Valid Date")
         ax.set_ylabel("Transaction Date (Recorded)")
         ax.set_title(title)
 
@@ -448,100 +502,169 @@ class Chart:
             self.hline.set_ydata([float("nan"), float("nan")])
             self.ax.figure.canvas.draw_idle()
 
-# --- Plotting function ---
-def plot_data():
-    dfDept = engine.sql_fetch(SqlCommands.FETCH_DEPT.value)
-    dfEmp = engine.sql_fetch(SqlCommands.FETCH_EMP.value)
+class App(tk.Tk):
+    def __init__(self):
+        super().__init__()
 
-    department_chart.display_chart(dfDept)
-    employee_chart.display_chart(dfEmp)
+        self.engine = DataEngine(CONNECTION_STRING)
 
-    department_table.tree.display_table(dfDept)
-    employee_table.tree.display_table(dfEmp)
+        self.title(APP_TITLE)
+        self.geometry("1700x800")
 
-def data_change(action):
-    engine.sql_execute(action)
-    plot_data()
+        # Configure the main grid layout
+        self.grid_rowconfigure(1, weight=1)  # Body expands vertically
+        self.grid_columnconfigure(0, weight=1)  # Expand horizontally
 
-# --- Handler for <<Chart Motion>> ---
-def handle_chart_motion(event):
-    dates = getattr(event.widget, "_last_payload", None)
-    if dates:
-        trans_dt = datetime.fromisoformat(dates['trans_dt'])
-        valid_dt = datetime.fromisoformat(dates['valid_dt'])
-        department_table.tree.select_row("dept_hist_id", trans_dt, valid_dt)
-        employee_table.tree.select_row("emp_hist_id", trans_dt, valid_dt)
+        # Create tooltip object
+        self.tooltip = Tooltip(self)
 
-# --- Main ---
-engine = DataEngine(CONNECTION_STRING)
+        # Create frames
+        self.create_header()
+        self.create_body()
+        self.create_footer()
 
-# --- Tkinter setup ---
-root = tk.Tk()
-root.title(APP_TITLE)
-root.geometry("1700x800")
-root.rowconfigure(0, weight=1)
-root.columnconfigure(0, weight=1)
+        self.bind_all("<<ChartMotion>>", self.handle_chart_motion)
 
-# Create tooltip object
-tooltip = Tooltip(root)
+        # --- Initial plot ---
+        self.plot_data()
 
-# --- Main PanedWindow (verical splitter) ---
-paned = tk.PanedWindow(root, orient=tk.VERTICAL, sashrelief=tk.RAISED, sashwidth=8, bg="lightgray")
-paned.grid(row=0, column=0, sticky="nsew")
+    def create_header(self):
+        header_frame = ttk.Frame(self, padding=5)
+        header_frame.grid(row=0, column=0, sticky="ew")  # Sticks east-west
+        header_frame.grid_columnconfigure(0, weight=1)
 
-# --- Chart PanedWindow (horizontal split) ---
-chart_paned = tk.PanedWindow(paned, orient=tk.HORIZONTAL, sashrelief=tk.RAISED, sashwidth=6, bg="lightgray")
-paned.add(chart_paned, stretch="always")
+        header_label = ttk.Label(header_frame, text=APP_TITLE, anchor="w", font=("Arial", 14, "bold"))
+        header_label.grid(row=0, column=0, sticky="ew")
 
-# --- Department Chart Frame ---
-department_chart_frame = tk.Frame(chart_paned, width=100)
-department_chart_frame.rowconfigure(0, weight=1)  # canvas row
-department_chart_frame.rowconfigure(1, weight=0)  # toolbar row
-department_chart_frame.columnconfigure(0, weight=1)
-department_chart = Chart(department_chart_frame, tooltip, 'Department', 'dept_hist_id', ['dept_hist_id', 'dept_name'])
-chart_paned.add(department_chart_frame, stretch="always")
+        # --- Right-aligned PNG info icon ---
+        png_file = "info_icon.png"  # Path to your pre-made PNG file
 
-# --- Employee Chart Frame ---
-employee_chart_frame = tk.Frame(chart_paned, width=100)
-employee_chart_frame.rowconfigure(0, weight=1)  # canvas row
-employee_chart_frame.rowconfigure(1, weight=0)  # toolbar row
-employee_chart_frame.columnconfigure(0, weight=1)
-employee_chart = Chart(employee_chart_frame, tooltip, 'Employee', 'emp_hist_id', ['emp_hist_id', 'last_name'])
-chart_paned.add(employee_chart_frame, stretch="always")
+        image = Image.open(png_file)
+        # Resize if necessary (optional)
+        image = image.resize((24, 24), Image.Resampling.LANCZOS)
+        tk_image = ImageTk.PhotoImage(image)
 
-# --- Department Table Frame ---
-department_table_frame = tk.Frame(paned)
-department_table_frame.rowconfigure(0, weight=0)
-department_table_frame.columnconfigure(0, weight=1)
-department_table = TableContainer(department_table_frame, "Department bi-temporal table", DEPT_COLUMNS)
-paned.add(department_table_frame)
+        info_icon_label = tk.Label(header_frame, image=tk_image, cursor="hand2")
+        info_icon_label.image = tk_image  # Keep reference
+        info_icon_label.grid(row=0, column=1, sticky="e", padx=5)
+        BtnToolTip(info_icon_label,f"You are currently connected\nto a {DB_PRODUCT} database")
 
-# --- Employee Table Frame ---
-employee_table_frame = tk.Frame(paned)
-employee_table_frame.rowconfigure(0, weight=0)
-employee_table_frame.columnconfigure(0, weight=1)
-employee_table = TableContainer(employee_table_frame, "Employee bi-temporal table", EMP_COLUMNS)
-paned.add(employee_table_frame)
+    def create_body(self):
+        body_frame = ttk.Frame(self, padding=5, relief="ridge")
+        body_frame.grid(row=1, column=0, sticky="nsew")  # Fill remaining space
+        body_frame.grid_rowconfigure(0, weight=1)
+        body_frame.grid_columnconfigure(0, weight=1)
 
-# --- Button frame ---
-toolbar_frame = tk.Frame(root)
-toolbar_frame.grid(row=1, column=0, sticky="ew")
+        # --- Main PanedWindow (verical splitter) ---
+        paned = tk.PanedWindow(body_frame, orient=tk.VERTICAL, sashrelief=tk.RAISED, sashwidth=8, bg="lightgray")
+        paned.grid(row=0, column=0, sticky="nsew")
 
-tk.Button(toolbar_frame, text="Reset", command=lambda: [btnUpdate1.config(state="active"), btnUpdate2.config(state="active"), data_change(SqlCommands.RESET.value)]).pack(side=tk.LEFT,padx=5, pady=5)
+        # --- Chart PanedWindow (horizontal split) ---
+        chart_paned = tk.PanedWindow(paned, orient=tk.HORIZONTAL, sashrelief=tk.RAISED, sashwidth=6, bg="lightgray")
+        paned.add(chart_paned, stretch="always")
 
-btnUpdate1 = tk.Button(toolbar_frame, text="Update #1", command=lambda: [btnUpdate1.config(state="disabled"), data_change(SqlCommands.UPDATE1.value)])
-btnUpdate1.pack(side=tk.LEFT, padx=5, pady=5)
-BtnToolTip(btnUpdate1,SqlCommands.UPDATE1.value)
+        # --- Department Chart Frame ---
+        department_chart_frame = tk.Frame(chart_paned)
+        department_chart_frame.rowconfigure(0, weight=1)  # canvas row
+        department_chart_frame.rowconfigure(1, weight=0)  # toolbar row
+        department_chart_frame.columnconfigure(0, weight=1)
+        self.department_chart = Chart(department_chart_frame, self.tooltip, 'Department', 'dept_hist_id', ['dept_hist_id', 'dept_name'])
+        chart_paned.add(department_chart_frame, stretch="always")
 
-btnUpdate2 = tk.Button(toolbar_frame, text="Update #2", command=lambda: [btnUpdate2.config(state="disabled"), data_change(SqlCommands.UPDATE2.value )])
-btnUpdate2.pack(side=tk.LEFT, padx=5, pady=5)
-BtnToolTip(btnUpdate2,SqlCommands.UPDATE2.value)
+        # --- Employee Chart Frame ---
+        employee_chart_frame = tk.Frame(chart_paned)
+        employee_chart_frame.rowconfigure(0, weight=1)  # canvas row
+        employee_chart_frame.rowconfigure(1, weight=0)  # toolbar row
+        employee_chart_frame.columnconfigure(0, weight=1)
+        self.employee_chart = Chart(employee_chart_frame, self.tooltip, 'Employee', 'emp_hist_id', ['emp_hist_id', 'last_name', 'job_title'])
+        chart_paned.add(employee_chart_frame, stretch="always")
 
-tk.Button(toolbar_frame, text="Refresh", command=plot_data).pack(side=tk.RIGHT, padx=5, pady=5)
+        # --- Department Table Frame ---
+        department_table_frame = tk.Frame(paned)
+        department_table_frame.rowconfigure(0, weight=1)
+        department_table_frame.columnconfigure(0, weight=1)
+        self.department_table = TableContainer(department_table_frame, "Department bi-temporal table", DEPT_COLUMNS)
+        paned.add(department_table_frame, stretch="always")
 
-root.bind_all("<<ChartMotion>>", handle_chart_motion)
+        # --- Employee Table Frame ---
+        employee_table_frame = tk.Frame(paned)
+        employee_table_frame.rowconfigure(0, weight=1)
+        employee_table_frame.columnconfigure(0, weight=1)
+        self.employee_table = TableContainer(employee_table_frame, "Employee bi-temporal table", EMP_COLUMNS)
+        paned.add(employee_table_frame, stretch="always")
 
-# --- Initial plot ---
-plot_data()
+    def create_footer(self):
+        footer_frame = ttk.Frame(self, padding=5)
+        footer_frame.grid(row=2, column=0, sticky="ew")
+        footer_frame.grid_columnconfigure((0, 1), weight=1)
 
-root.mainloop()
+        # --- Create all buttons ---
+        reset_btn = tk.Button(footer_frame, text="Reset")
+        update1_btn = tk.Button(footer_frame, text="Update #1")
+        update2_btn = tk.Button(footer_frame, text="Update #2")
+        update3_btn = tk.Button(footer_frame, text="Update #3")
+        refresh_btn = tk.Button(footer_frame, text="Refresh")
+
+        # --- Pack buttons ---
+        reset_btn.pack(side=tk.LEFT, padx=5, pady=5)
+        update1_btn.pack(side=tk.LEFT, padx=5, pady=5)
+        update2_btn.pack(side=tk.LEFT, padx=5, pady=5)
+        update3_btn.pack(side=tk.LEFT, padx=5, pady=5)
+        refresh_btn.pack(side=tk.RIGHT, padx=5, pady=5)
+
+        # --- Assign commands ---
+        reset_btn.config(command=lambda: [
+            update1_btn.config(state="active"),
+            update2_btn.config(state="active"),
+            update3_btn.config(state="active"),
+            self.data_change(SqlCommands.RESET.value)
+        ])
+        update1_btn.config(command=lambda: [
+            update1_btn.config(state="disabled"),
+            self.data_change(SqlCommands.UPDATE1.value)
+        ])
+        update2_btn.config(command=lambda: [
+            update2_btn.config(state="disabled"),
+            self.data_change(SqlCommands.UPDATE2.value)
+        ])
+        update3_btn.config(command=lambda: [
+            update3_btn.config(state="disabled"),
+            self.data_change(SqlCommands.UPDATE3.value)
+        ])
+        refresh_btn.config(command=self.plot_data)
+
+        # --- Tooltips ---
+        BtnToolTip(reset_btn, "Reset the database data and refresh the charts and tables")
+        BtnToolTip(update1_btn, SqlCommands.UPDATE1.value)
+        BtnToolTip(update2_btn, SqlCommands.UPDATE2.value)
+        BtnToolTip(update3_btn, SqlCommands.UPDATE3.value)
+        BtnToolTip(refresh_btn, "Refresh the charts and tables from the database")
+
+
+    # --- Plotting function ---
+    def plot_data(self):
+        dfDept = self.engine.sql_fetch(SqlCommands.FETCH_DEPT.value)
+        dfEmp = self.engine.sql_fetch(SqlCommands.FETCH_EMP.value)
+
+        self.department_chart.display_chart(dfDept)
+        self.employee_chart.display_chart(dfEmp)
+
+        self.department_table.tree.display_table(dfDept)
+        self.employee_table.tree.display_table(dfEmp)
+
+    def data_change(self, action):
+        self.engine.sql_execute(action)
+        self.plot_data()
+
+    # --- Handler for <<Chart Motion>> ---
+    def handle_chart_motion(self, event):
+        dates = getattr(event.widget, "_last_payload", None)
+        if dates:
+            trans_dt = datetime.fromisoformat(dates['trans_dt'])
+            valid_dt = datetime.fromisoformat(dates['valid_dt'])
+            self.department_table.tree.select_row("dept_hist_id", trans_dt, valid_dt)
+            self.employee_table.tree.select_row("emp_hist_id", trans_dt, valid_dt)
+
+if __name__ == "__main__":
+    app = App()
+    app.mainloop()

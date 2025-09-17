@@ -22,6 +22,7 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="BiTemporal.py" />
+    <Compile Include="harness.py" />
   </ItemGroup>
   <ItemGroup>
     <Folder Include="PostgreSql\" />
@@ -29,7 +30,8 @@
   </ItemGroup>
   <ItemGroup>
     <Content Include=".env" />
-    <Content Include="LICENSE" />
+    <Content Include="info_icon.png" />
+    <Content Include="LICENCE" />
     <Content Include="PostgreSql\Create.sql" />
     <Content Include="PostgreSql\Queries.sql" />
     <Content Include="README.md" />

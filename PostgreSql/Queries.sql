@@ -30,4 +30,21 @@ WHERE
 ORDER BY 
 	d.dept_hist_id;
 
+
+UPDATE	
+	dbo.Employee
+SET
+	job_title = 'Lead Sales Rep',
+	valid_from = '2025-10-01'
+WHERE 
+	emp_id = 100;
+
+SELECT
+    e.*
+FROM 
+	dbo.employee e
+WHERE 
+	e.emp_id = 100
+ORDER BY 
+	e.emp_hist_id;	
     

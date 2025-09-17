@@ -150,7 +150,7 @@ BEGIN
 	OR	
        	NEW.valid_to  <> OLD.valid_to 
    THEN
-        RAISE EXCEPTION 'Updates to tran_from or valid_to are not allowed.';
+        RAISE EXCEPTION 'Updates to dept_id, tran_from, tran_to or valid_to are not allowed.';
     END IF;
 
 	-- 1. Find the dept_hist_id to be affected
@@ -242,6 +242,141 @@ CREATE TRIGGER tr_department_update
 BEFORE UPDATE ON dbo.department
 FOR EACH ROW
 EXECUTE FUNCTION dbo.tr_department_update();
+
+-- ============================================================
+-- Employee Update Trigger 
+-- ============================================================
+CREATE OR REPLACE FUNCTION dbo.tr_employee_update()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+DECLARE
+    now_ts TIMESTAMP := NOW();
+	affect_emp_hist_id BIGINT;
+BEGIN
+
+    -- Disallow updates to emp_id, tran_from, tran_to & valid_to
+    IF 
+		NEW.emp_id <> OLD.emp_id 
+	OR
+		NEW.tran_from <> OLD.tran_from 
+	OR
+		NEW.tran_to <> OLD.tran_to 
+	OR	
+       	NEW.valid_to  <> OLD.valid_to 
+   THEN
+        RAISE EXCEPTION 'Updates to emp_id, tran_from, tran_to or valid_to are not allowed.';
+    END IF;
+
+	-- 1. Find the emp_hist_id to be affected
+	SELECT
+		d.emp_hist_id
+	INTO
+		affect_emp_hist_id
+    FROM 
+		dbo.employee d
+    WHERE
+		OLD.emp_hist_id = d.emp_hist_id
+	AND
+		NEW.emp_hist_id = OLD.emp_hist_id
+    AND 
+		NEW.valid_from >= OLD.valid_from 
+	AND 
+		NEW.valid_from < OLD.valid_to
+    AND 
+		OLD.tran_to = dbo.fn_infinity();
+
+    -- 2. Only affect the relevant history row, ignore others
+	IF affect_emp_hist_id IS NULL THEN
+		RETURN NULL;
+	ELSE
+
+	    -- 3.a Backfill old version if needed
+	    IF 
+			NEW.valid_from > OLD.valid_from 
+		AND 
+			NEW.valid_from < OLD.valid_to 
+		THEN
+	        INSERT INTO dbo.employee 
+			(
+	            emp_id, 
+				dept_id,
+				first_name,
+				last_name,
+				job_title, 
+				hire_date,
+				term_date,
+	            valid_from, 
+				valid_to, 
+				tran_from, 
+				tran_to
+	        )
+	        VALUES 
+			(
+	            OLD.emp_id,
+	            OLD.dept_id,
+	            OLD.first_name,
+				OLD.last_name,
+				OLD.job_title,
+				OLD.hire_date,
+				OLD.term_date,
+	            OLD.valid_from,
+	            NEW.valid_from,
+	            now_ts,
+	            dbo.fn_infinity()
+	        );
+	    END IF;
+
+	    -- 3.b Insert the new version
+	    INSERT INTO dbo.employee 
+		(
+			emp_id, 
+			dept_id,
+			first_name,
+			last_name,
+			job_title, 
+			hire_date,
+			term_date,
+			valid_from, 
+			valid_to, 
+			tran_from, 
+			tran_to
+	    )
+	    VALUES 
+		(
+	        NEW.emp_id,
+			NEW.dept_id,
+			NEW.first_name,
+			NEW.last_name,
+			NEW.job_title,
+			NEW.hire_date,
+			NEW.term_date,
+	        NEW.valid_from,
+	        NEW.valid_to,
+	        now_ts,
+	        dbo.fn_infinity()
+	    );
+	
+	    -- 3.c Close the old version
+		NEW.dept_id = OLD.dept_id;
+		NEW.first_name = OLD.first_name;
+		NEW.last_name = OLD.last_name;
+		NEW.job_title = OLD.job_title;
+		NEW.hire_date = OLD.hire_date;
+		NEW.term_date = OLD.term_date;
+		NEW.valid_from = OLD.valid_from;		
+		NEW.tran_to = now_ts;
+		
+    	RETURN NEW;
+	END IF;
+		
+END;
+$$;
+
+CREATE TRIGGER tr_employee_update
+BEFORE UPDATE ON dbo.employee
+FOR EACH ROW
+EXECUTE FUNCTION dbo.tr_employee_update();
 
 -- Extended functionality 
 -- ============================================================

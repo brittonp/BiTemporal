@@ -97,9 +97,9 @@ AS
 BEGIN
     SET NOCOUNT ON;
 
-    IF (UPDATE(tran_from) OR UPDATE(tran_to) OR UPDATE(valid_to))
+    IF (UPDATE(dept_id) OR UPDATE(tran_from) OR UPDATE(tran_to) OR UPDATE(valid_to))
     BEGIN
-        THROW 50001, 'Updates to tran_from, tran_to, or valid_to are not allowed.', 1;
+        THROW 50001, 'Updates to dept_id, tran_from, tran_to or valid_to are not allowed.', 1;
         ROLLBACK TRANSACTION;
         RETURN;
     END;
@@ -111,7 +111,24 @@ BEGIN
         RETURN;
     END;
 
+    DECLARE @affect_dept_hist_id BIGINT;
     DECLARE @now DATETIME2(7) = SYSUTCDATETIME();
+
+    -- 1. Find the dept_hist_id to be affected
+	SELECT
+		@affect_dept_hist_id = d.dept_hist_id
+    FROM 
+		deleted d
+    JOIN 
+		inserted i 
+	ON 
+		d.dept_hist_id = i.dept_hist_id
+    WHERE 
+		i.valid_from >= d.valid_from 
+	AND 
+		i.valid_from < d.valid_to
+    AND 
+		d.tran_to = dbo.fn_infinity()
 
     -- Backfill record
     INSERT INTO 
@@ -140,11 +157,7 @@ BEGIN
 	ON 
 		d.dept_hist_id = i.dept_hist_id
     WHERE 
-		i.valid_from >= d.valid_from 
-	AND 
-		i.valid_from < d.valid_to
-    AND 
-		d.tran_to = dbo.fn_infinity()
+        d.dept_hist_id = @affect_dept_hist_id
     AND 
 		d.valid_from != i.valid_from;
 
@@ -153,22 +166,8 @@ BEGIN
 		dbo.Department
     SET 
 		tran_to = @now
-    FROM 
-		dbo.department dpt
-    JOIN 
-		deleted d 
-	ON 
-		dpt.dept_hist_id = d.dept_hist_id
-    JOIN 
-		inserted i 
-	ON 
-		d.dept_hist_id = i.dept_hist_id
-    WHERE 
-		i.valid_from >= d.valid_from 
-	AND 
-		i.valid_from < d.valid_to
-    AND 
-		d.tran_to = dbo.fn_infinity();
+    WHERE
+        dept_hist_id = @affect_dept_hist_id;
 
     -- Insert new version
     INSERT INTO 
@@ -190,18 +189,137 @@ BEGIN
         i.valid_to,
         @now,
         dbo.fn_infinity()
+    FROM
+        inserted i
+    WHERE
+        i.dept_hist_id = @affect_dept_hist_id;
+END;
+GO
+
+-- ============================================================
+-- Employee Update Trigger
+-- ============================================================
+CREATE OR ALTER TRIGGER 
+	dbo.tr_employee_update
+ON 
+	dbo.employee
+INSTEAD OF UPDATE
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    IF (UPDATE(emp_id) OR UPDATE(tran_from) OR UPDATE(tran_to) OR UPDATE(valid_to))
+    BEGIN
+        THROW 50003, 'Updates to emp_id, tran_from, tran_to or valid_to are not allowed.', 1;
+        ROLLBACK TRANSACTION;
+        RETURN;
+    END;
+
+    IF NOT UPDATE(valid_from)
+    BEGIN
+        THROW 50002, 'A valid_from date is required.', 1;
+        ROLLBACK TRANSACTION;
+        RETURN;
+    END;
+
+    DECLARE @affect_emp_hist_id BIGINT;
+    DECLARE @now DATETIME2(7) = SYSUTCDATETIME();
+
+    -- 1. Find the emp_hist_id to be affected
+	SELECT
+		@affect_emp_hist_id = d.emp_hist_id
     FROM 
 		deleted d
     JOIN 
 		inserted i 
 	ON 
-		d.dept_hist_id = i.dept_hist_id
+		d.emp_hist_id = i.emp_hist_id
     WHERE 
 		i.valid_from >= d.valid_from 
 	AND 
 		i.valid_from < d.valid_to
     AND 
-		i.tran_to = dbo.fn_infinity();
+		d.tran_to = dbo.fn_infinity()
+
+    -- Backfill record
+    INSERT INTO 
+		dbo.employee 
+	(
+	    emp_id, 
+		dept_id,
+		first_name,
+		last_name,
+		job_title, 
+		hire_date,
+		term_date,
+	    valid_from, 
+		valid_to, 
+		tran_from, 
+		tran_to
+    )
+    SELECT
+        d.emp_id,
+		d.dept_id,
+		d.first_name,
+		d.last_name,
+		d.job_title, 
+		d.hire_date,
+		d.term_date,
+        d.valid_from,
+        i.valid_from,
+        @now,
+        dbo.fn_infinity()
+    FROM 
+		deleted d
+    JOIN 
+		inserted i 
+	ON 
+		d.emp_hist_id = i.emp_hist_id
+    WHERE 
+        d.emp_hist_id = @affect_emp_hist_id
+    AND 
+		d.valid_from != i.valid_from;
+
+    -- Close old version
+    UPDATE 
+		dbo.employee
+    SET 
+		tran_to = @now
+    WHERE
+        emp_hist_id = @affect_emp_hist_id;
+
+    -- Insert new version
+    INSERT INTO 
+		dbo.employee 
+	(
+	    emp_id, 
+		dept_id,
+		first_name,
+		last_name,
+		job_title, 
+		hire_date,
+		term_date,
+	    valid_from, 
+		valid_to, 
+		tran_from, 
+		tran_to
+    )
+    SELECT
+        i.emp_id,
+		i.dept_id,
+		i.first_name,
+		i.last_name,
+		i.job_title, 
+		i.hire_date,
+		i.term_date,
+        i.valid_from,
+        i.valid_to,
+        @now,
+        dbo.fn_infinity()
+    FROM
+        inserted i
+    WHERE
+        i.emp_hist_id = @affect_emp_hist_id;
 END;
 GO
 
