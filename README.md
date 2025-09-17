@@ -30,7 +30,7 @@ The [Create.sql](./SqlServer/Create.sql) creates:
 
 The file can be re-executed to re-create the database objects.
 
-Further files: 
+Further files:
 
 * [Queries.sql](./SqlServer/Queries.sql) contains some example update statements, queries and example procedure calls, although the app itself provides all the necessary database interaction for this example.
 * [Queries_Multiple.sql](./SqlServer/Queries_Multiple.sql) contains examples of querying of linked bi-temporal tables given a *tran_date* and *valid_date*.
